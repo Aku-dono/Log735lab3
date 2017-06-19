@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Scanner;
 
+import com.sun.corba.se.spi.activation._InitialNameServiceStub;
 import com.sun.corba.se.spi.servicecontext.SendingContextServiceContext;
 
 public class Succursale extends UnicastRemoteObject implements SuccursaleInterface, Runnable {
@@ -169,6 +170,11 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 				else
 					System.out.println("Transfer complété");
 				break;
+			case "erreur":
+				System.out.println("Retirer combien d'argent?");
+				int moneyLost = input.nextInt();
+				instance._montant -= moneyLost;
+				System.out.println("Argent retiré.");
 			default:
 				System.out.println("invalid command");
 				break;
