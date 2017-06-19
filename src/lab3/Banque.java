@@ -41,4 +41,9 @@ public class Banque extends UnicastRemoteObject implements BanqueInterface {
 		LocateRegistry.createRegistry(2020);
 		Naming.rebind("rmi://localhost:2020/Banque", new Banque());
 	}
+
+	@Override
+	public int getTotal() {
+		return _total;
+	}
 }
