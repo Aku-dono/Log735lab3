@@ -163,6 +163,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			}	
 		}
 		input.close();
+		//In theory, shut down the succursale here, but it's not part of the specs, so yeah. Program stalls. 
 	}
 
 	private List<Transfer> _floatingMessages;
@@ -188,11 +189,13 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		Transfer localValue = new Transfer(_montant, _uid, -1, snapshotToken);
 		ArrayList<Transfer> result = new ArrayList<Transfer>();
 		//Send request to all known succursales. 
+		result.add(localValue);
 		for(Object key : _succursales.keySet())
 		{
-			result.addAll(_succursales.get(key).sendSnapshotRequest(snapshotToken, observerID));
+			List<Transfer> otherLocals = _succursales.get(key).sendSnapshotRequest(snapshotToken, observerID);
+			if(otherLocals != null)
+				result.addAll(otherLocals);
 		}
-		result.add(localValue);
 		return result; 
 	}
 	
@@ -200,14 +203,14 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	{
 		//Prepare list for canal messages
 		_floatingMessages = new ArrayList<Transfer>(); 
-		
+		int newsnapshotToken = -1;
 		int oldToken = _snapshotToken;
 		do{
-			_snapshotToken = _random.nextInt(); //Might roll the same one. 
-		}while(oldToken == _snapshotToken);
+			newsnapshotToken = _random.nextInt(); //Might roll the same one. 
+		}while(oldToken == newsnapshotToken);
 		
 		try {
-			List<Transfer> succursaleValues = sendSnapshotRequest(_snapshotToken, _uid);
+			List<Transfer> succursaleValues = sendSnapshotRequest(newsnapshotToken, _uid);
 			//List succursales
 			int snapshotSum =0;
 			for(Transfer t : succursaleValues)
