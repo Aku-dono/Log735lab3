@@ -23,7 +23,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	private Random _random;
 	
 	private int _snapshotToken;
-	private int _lastObserver;
+	private Map<Integer, Integer> _observers; //<snapshot token, observerID> 
 
 	protected Succursale(BanqueInterface banque, int montant) throws RemoteException
 	{
@@ -33,7 +33,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		_montant = montant;
 		_banque.connect(this, _montant);
 		_snapshotToken = -1; 
-		_lastObserver = -1; 
+		_observers = new HashMap<>();
 	}
 
 	public int getIdentity() throws RemoteException
@@ -66,13 +66,15 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	{
 		_montant += transfer.getMoney();
 		System.out.println("ReÃ§u " + transfer.getMoney() + "$ de la succursale " + transfer.getSenderID());
-		System.out.println(this);
+		//System.out.println(this);
 		
 		//This message was sent before a snapshot request was received, 
 		//add it to observer. 
 		if(transfer.getSnapshotToken() != _snapshotToken)
 		{
-			_succursales.get(_lastObserver).appendMessage(transfer);
+			_succursales.get(
+					_observers.get(_snapshotToken) //THIS WILL MOST LIKELY BUG OUT!! 
+					).appendMessage(transfer);
 		}
 	}
 
@@ -143,7 +145,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		int montant = input.nextInt();
 		BanqueInterface banque = (BanqueInterface) Naming.lookup("rmi://localhost:2020/Banque");
 		Succursale instance = new Succursale(banque, montant); 
-		new Thread(instance).start();
+		//new Thread(instance).start();
 		Boolean closing = false; 
 		
 		while(!closing)
@@ -157,6 +159,16 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			case "get snapshot":
 				instance.getSnapshot();
 				break;
+			case "transfer":
+				System.out.println("Transferer des fonds vers quelle succursale?");
+				int destinationID = input.nextInt();
+				System.out.println("Transferer combien d'argent?");
+				int money = input.nextInt();
+				if(!instance.sendMoney(destinationID, money))
+					System.out.println("Une erreur est survenue.");
+				else
+					System.out.println("Transfer complété");
+				break;
 			default:
 				System.out.println("invalid command");
 				break;
@@ -164,6 +176,24 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		}
 		input.close();
 		//In theory, shut down the succursale here, but it's not part of the specs, so yeah. Program stalls. 
+	}
+
+	private boolean sendMoney(int destinationID, int money) {
+		SuccursaleInterface destination = _succursales.get(destinationID);
+
+		//Check if input is valid
+		if (money > _montant || destination == null)
+			return false;
+		
+		//Send the funds
+		try {
+			_montant -= money;
+			destination.receiveMoney(new Transfer(money, _uid, destinationID, _snapshotToken));
+		} catch (RemoteException e) {
+			e.printStackTrace();
+		}
+		
+		return true;
 	}
 
 	private List<Transfer> _floatingMessages;
@@ -181,10 +211,10 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			e.printStackTrace();
 		}
 		
-		if(snapshotToken == _snapshotToken)
+		if(_observers.values().contains(observerID))
 			return null; //Already replied to this message, ignore it. 
 		_snapshotToken = snapshotToken;
-		_lastObserver = observerID;
+		_observers.put(snapshotToken, observerID);
 		
 		Transfer localValue = new Transfer(_montant, _uid, -1, snapshotToken);
 		ArrayList<Transfer> result = new ArrayList<Transfer>();
@@ -196,6 +226,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			if(otherLocals != null)
 				result.addAll(otherLocals);
 		}
+		
 		return result; 
 	}
 	
@@ -224,7 +255,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 				System.out.println("Canal " + t.getSenderID() + "-" + t.getReceiverID() + ": " + t.getMoney() + "$");
 				snapshotSum += t.getMoney();
 			}
-			endSnapshotRequest();
+			endSnapshotRequest(newsnapshotToken);
 			
 			int bankTotal = _banque.getTotal();
 			System.out.println("Somme connue par la Banque : " + bankTotal + "$");
@@ -243,9 +274,9 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	}
 	
 	@Override
-	public void endSnapshotRequest()
+	public void endSnapshotRequest(int snapshotToken)
 	{
-		
+		_observers.remove(snapshotToken);
 	}
 }
 
