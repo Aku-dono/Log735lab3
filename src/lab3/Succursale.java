@@ -7,14 +7,10 @@ import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Scanner;
-
-import com.sun.corba.se.spi.activation._InitialNameServiceStub;
-import com.sun.corba.se.spi.servicecontext.SendingContextServiceContext;
 
 public class Succursale extends UnicastRemoteObject implements SuccursaleInterface, Runnable {
 	private int _montant;
@@ -102,21 +98,16 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		{
 			try
 			{
+                //SUCCURSALE-05: Sleep 5 to 10 seconds between transfers
+                Thread.sleep(5000 + _random.nextInt(5000));
 				if(_montant > 0 && _succursales.size() > 0)
 				{
-					//SUCCURSALE-05: Sleep 5 to 10 seconds between transfers
-					Thread.sleep(5000 + _random.nextInt(5000));
 					int transferAmount = 1 + _random.nextInt(_montant);
 					_montant -= transferAmount;
 					
 					//get random element in map
 					int index = _random.nextInt(_succursales.size());
-					int receiverID = -1;
-					Iterator<Integer> iterator = _succursales.keySet().iterator();
-					do
-					{
-						receiverID = iterator.next();
-					} while(index-- > 0);
+					int receiverID = (Integer) _succursales.keySet().toArray()[index];
 					
 					SuccursaleInterface randomSuccursale = ((SuccursaleInterface)_succursales.get(receiverID));
 
@@ -133,8 +124,6 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			{
 				e.printStackTrace();
 			}
-
-
 		}
 	}
 
@@ -144,9 +133,9 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		System.out.println("Veuillez entrer le montant de dÃ©part: ");
 		Scanner input = new Scanner(System.in);
 		int montant = input.nextInt();
-		BanqueInterface banque = (BanqueInterface) Naming.lookup("rmi://localhost:2020/Banque");
+		BanqueInterface banque = (BanqueInterface) Naming.lookup("rmi://10.196.115.15:2020/Banque");
 		Succursale instance = new Succursale(banque, montant); 
-		//new Thread(instance).start();
+		new Thread(instance).start();
 		Boolean closing = false; 
 		
 		while(!closing)
@@ -168,13 +157,13 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 				if(!instance.sendMoney(destinationID, money))
 					System.out.println("Une erreur est survenue.");
 				else
-					System.out.println("Transfer complété");
+					System.out.println("Transfer complÃ©tÃ©");
 				break;
 			case "erreur":
 				System.out.println("Retirer combien d'argent?");
 				int moneyLost = input.nextInt();
 				instance._montant -= moneyLost;
-				System.out.println("Argent retiré.");
+				System.out.println("Argent retirÃ©.");
 			default:
 				System.out.println("invalid command");
 				break;
@@ -265,12 +254,12 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			
 			int bankTotal = _banque.getTotal();
 			System.out.println("Somme connue par la Banque : " + bankTotal + "$");
-			System.out.println("Somme détectée par la Capture : " + snapshotSum + "$");
+			System.out.println("Somme dÃ©tectÃ©e par la Capture : " + snapshotSum + "$");
 			
 			if(bankTotal == snapshotSum)
-				System.out.println("ÉTAT GLOBAL COHÉRENT");
+				System.out.println("Ã‰TAT GLOBAL COHÃ‰RENT");
 			else
-				System.out.println("ÉTAT GLOBAL INCOHÉRENT");
+				System.out.println("Ã‰TAT GLOBAL INCOHÃ‰RENT");
 			
 			
 		} catch (RemoteException e) {
