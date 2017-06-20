@@ -188,7 +188,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		SuccursaleInterface destination = _succursales.get(destinationID);
 
 		//Check if input is valid
-		if (money > _montant || destination == null)
+		if (money <= 0 || money > _montant || destination == null)
 			return false;
 		
 		//Send the funds
