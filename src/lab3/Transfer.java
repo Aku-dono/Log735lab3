@@ -20,7 +20,7 @@ public class Transfer implements Serializable {
 		return receiverID;
 	}
 
-	public int getSnapshotToken() {
+	public Integer getSnapshotToken() {
 		return snapshotToken;
 	}
 

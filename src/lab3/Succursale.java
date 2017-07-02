@@ -12,6 +12,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Scanner;
 
+import javax.swing.plaf.ActionMapUIResource;
+
 public class Succursale extends UnicastRemoteObject implements SuccursaleInterface, Runnable {
 	private int _montant;
 	private int _uid;
@@ -19,7 +21,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	private BanqueInterface _banque;
 	private Random _random;
 	
-	private int _snapshotToken;
+	//currently active snapshots and the succursales that started them.
 	private Map<Integer, Integer> _observers; //<snapshot token, observerID> 
 
 	protected Succursale(BanqueInterface banque, int montant) throws RemoteException
@@ -29,8 +31,15 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		_banque = banque;
 		_montant = montant;
 		_banque.connect(this, _montant);
-		_snapshotToken = -1; 
 		_observers = new HashMap<>();
+	}
+	
+	//Gets a list of currently active snapshots. 
+	private Integer[] getSnapshotList()
+	{
+		if(_observers.isEmpty())
+			return null;
+		return (Integer[])_observers.keySet().toArray(); //avoid synchronization issues
 	}
 
 	public int getIdentity() throws RemoteException
@@ -66,12 +75,24 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		//System.out.println(this);
 		
 		//This message was sent before a snapshot request was received, 
-		//add it to observer. 
-		if(transfer.getSnapshotToken() != _snapshotToken)
+		//add it to observer.
+		if(!_observers.isEmpty())
 		{
-			_succursales.get(
-					_observers.get(_snapshotToken) //THIS WILL MOST LIKELY BUG OUT!! 
-					).appendMessage(transfer);
+			Integer[] activeSnapshots = getSnapshotList();
+			for(int i = activeSnapshots.length - 1; i >= 0; i--) //start by the newest tokens. 
+			{
+				//Transfer has no snapshot token, meaning it was sent when the sender had no
+				//active snapshots, or the sender'S current snapshot isn't the latest one. 
+				if(transfer.getSnapshotToken() == null || transfer.getSnapshotToken() != activeSnapshots[i])
+					_succursales.get(
+							_observers.get(activeSnapshots[i])  
+							).appendMessage(transfer);
+				//Transfer had a snapshot, and it's this one. We caught up in time with the sender, so end the loop.   
+				else
+				{
+					break;
+				}
+			}
 		}
 	}
 
@@ -115,9 +136,12 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 					System.out.println(this);
 
 					//TRANSFERT-03: Sleep 5 seconds for latency
+					Integer[] activeSnapshots = getSnapshotList();
+					int snapshotToken = activeSnapshots != null ? activeSnapshots[activeSnapshots.length - 1] : null;
+					
 					Thread.sleep(5000);
 					randomSuccursale.receiveMoney(
-							new Transfer(transferAmount, _uid, receiverID, _snapshotToken));
+							new Transfer(transferAmount, _uid, receiverID, snapshotToken));
 				}
 			}
 			catch(Exception e)
@@ -133,7 +157,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		System.out.println("Veuillez entrer le montant de départ: ");
 		Scanner input = new Scanner(System.in);
 		int montant = input.nextInt();
-		BanqueInterface banque = (BanqueInterface) Naming.lookup("rmi://10.196.115.15:2020/Banque");
+		BanqueInterface banque = (BanqueInterface) Naming.lookup("rmi://localhost:2020/Banque");
 		Succursale instance = new Succursale(banque, montant); 
 		new Thread(instance).start();
 		Boolean closing = false; 
@@ -183,7 +207,9 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		//Send the funds
 		try {
 			_montant -= money;
-			destination.receiveMoney(new Transfer(money, _uid, destinationID, _snapshotToken));
+			Integer[] activeSnapshots = getSnapshotList();
+			int snapshotToken = activeSnapshots != null ? activeSnapshots[activeSnapshots.length - 1] : null;
+			destination.receiveMoney(new Transfer(money, _uid, destinationID, snapshotToken));
 		} catch (RemoteException e) {
 			e.printStackTrace();
 		}
@@ -207,8 +233,8 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		}
 		
 		if(_observers.values().contains(observerID))
-			return null; //Already replied to this message, ignore it. 
-		_snapshotToken = snapshotToken;
+			return null; //Obsrver already has an active snapshot. Ignore this request.  
+		//_snapshotToken = snapshotToken;
 		_observers.put(snapshotToken, observerID);
 		
 		Transfer localValue = new Transfer(_montant, _uid, -1, snapshotToken);
@@ -230,10 +256,9 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		//Prepare list for canal messages
 		_floatingMessages = new ArrayList<Transfer>(); 
 		int newsnapshotToken = -1;
-		int oldToken = _snapshotToken;
 		do{
-			newsnapshotToken = _random.nextInt(); //Might roll the same one. 
-		}while(oldToken == newsnapshotToken);
+			newsnapshotToken = _random.nextInt(); //Might roll an already active one.  
+		}while(_observers.containsKey(newsnapshotToken));
 		
 		try {
 			List<Transfer> succursaleValues = sendSnapshotRequest(newsnapshotToken, _uid);
@@ -269,9 +294,23 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	}
 	
 	@Override
-	public void endSnapshotRequest(int snapshotToken)
+	public boolean endSnapshotRequest(int snapshotToken) throws RemoteException
 	{
+		try {
+			Thread.sleep(5000);
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		if(!_observers.containsKey(snapshotToken))
+			return false; //Actual return value is irrelevant. It's just that this shouldn't be an async operation. 
 		_observers.remove(snapshotToken);
+		
+		for(SuccursaleInterface succ : _succursales.values())
+		{
+			succ.endSnapshotRequest(snapshotToken);
+		}
+		return true; 
 	}
 }
 
