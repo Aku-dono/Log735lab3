@@ -247,7 +247,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	}
 
 	@Override
-	public List<Transfer> sendSnapshotRequest(int snapshotToken, int observerID) throws RemoteException {
+	public Transfer sendSnapshotRequest(int snapshotToken, int observerID) throws RemoteException {
 		try {
 			Thread.sleep(5000);
 		} catch (InterruptedException e) {
@@ -258,18 +258,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			return null; //Obsrver already has an active snapshot. Ignore this request.  
 		_observers.put(snapshotToken, observerID);
 		
-		Transfer localValue = new Transfer(_montant, _uid, -1, snapshotToken);
-		ArrayList<Transfer> result = new ArrayList<Transfer>();
-		//Send request to all known succursales. 
-		result.add(localValue);
-		for(Object key : _succursales.keySet())
-		{
-			List<Transfer> otherLocals = _succursales.get(key).sendSnapshotRequest(snapshotToken, observerID);
-			if(otherLocals != null)
-				result.addAll(otherLocals);
-		}
-		
-		return result; 
+		return new Transfer(_montant, _uid, -1, snapshotToken); 
 	}
 	
 	private void getSnapshot()
@@ -286,9 +275,27 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 
 		try {
 			System.out.println("Lancement de requête d'état: " + newsnapshotToken);
-			List<Transfer> succursaleValues = sendSnapshotRequest(newsnapshotToken, _uid);
+			List<Transfer> succursaleValues = new ArrayList<>();
+			//Add this succursale's value to the result. 
+			succursaleValues.add(sendSnapshotRequest(newsnapshotToken, _uid));
+			for(Object key : _succursales.keySet())
+			{
+				//Send request to all known succursales.
+				Transfer otherSuccursale = _succursales.get(key).sendSnapshotRequest(newsnapshotToken, _uid);
+				if(otherSuccursale != null)
+					succursaleValues.add(otherSuccursale);
+			}
 			System.out.println("Début de la fermeture de requête d'état: " + newsnapshotToken);
-			List<Transfer> floatingMessages = endSnapshotRequest(newsnapshotToken); //endSnapshotRequest also removes floatingMessages and returns its content.
+			
+			List<Transfer> floatingMessages = new ArrayList<>();
+			//Get floating messages at succursales
+			for(SuccursaleInterface succ : _succursales.values())
+			{
+				floatingMessages.addAll(succ.endSnapshotRequest(newsnapshotToken));
+			}
+			//Get floating message at caller.
+			floatingMessages.addAll(endSnapshotRequest(newsnapshotToken));
+			
 			System.out.println("Requête d'état terminée: " + newsnapshotToken);
 			//List succursales
 			int snapshotSum =0;
@@ -335,13 +342,24 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			return null;  
 		_observers.remove(snapshotToken);
 		
-		for(SuccursaleInterface succ : _succursales.values())
-		{
-			succ.endSnapshotRequest(snapshotToken);
-		}
-		 
 		return _floatingMessages.remove(snapshotToken);
 		
+	}
+	
+	private List<Transfer> formatMessageList(List<Transfer> origin)
+	{
+		for(int i = 0; i < origin.size(); i++)
+		{
+			for(int k = i+1; k < origin.size(); k++)
+			{
+				if (origin.get(i).add(origin.get(k)))//if this is true, then the transfer should be removed from the list. 
+				{
+					origin.remove(k--);
+					break; 
+				}
+			}
+		}
+		return origin;
 	}
 }
 
