@@ -6,7 +6,7 @@ public class Transfer implements Serializable {
 	private int money;
 	private int senderID;
 	private int receiverID; 
-	private int snapshotToken;
+	private Integer snapshotToken;
 	
 	public int getMoney() {
 		return money;
@@ -24,7 +24,7 @@ public class Transfer implements Serializable {
 		return snapshotToken;
 	}
 
-	public Transfer(int money, int senderID, int receiverID, int snapshotToken)
+	public Transfer(int money, int senderID, int receiverID, Integer snapshotToken)
 	{
 		this.money = money;
 		this.senderID = senderID;

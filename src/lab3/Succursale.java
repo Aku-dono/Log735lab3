@@ -32,6 +32,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		_montant = montant;
 		_banque.connect(this, _montant);
 		_observers = new HashMap<>();
+		_floatingMessages = new HashMap<>();
 	}
 	
 	//Gets a list of currently active snapshots. 
@@ -39,7 +40,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	{
 		if(_observers.isEmpty())
 			return null;
-		return (Integer[])_observers.keySet().toArray(); //avoid synchronization issues
+		return _observers.keySet().toArray(new Integer[_observers.size()]); //avoid synchronization issues
 	}
 
 	public int getIdentity() throws RemoteException
@@ -115,10 +116,29 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	}
 
 	public void run() {
+		//ETAT-02: Snapshot loop. Anonymous type because laziness. 
+		new Thread(new Runnable() {
+			@Override
+			public void run() {
+				while(true)
+				{
+					try {
+						Thread.sleep(10000 + _random.nextInt(20000));
+						getSnapshot(); //start snapshot process. 
+						
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+			}
+		}).start();
+		
+		
 		while (true)
 		{
 			try
-			{
+			{				
                 //SUCCURSALE-05: Sleep 5 to 10 seconds between transfers
                 Thread.sleep(5000 + _random.nextInt(5000));
 				if(_montant > 0 && _succursales.size() > 0)
@@ -137,7 +157,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 
 					//TRANSFERT-03: Sleep 5 seconds for latency
 					Integer[] activeSnapshots = getSnapshotList();
-					int snapshotToken = activeSnapshots != null ? activeSnapshots[activeSnapshots.length - 1] : null;
+					Integer snapshotToken = activeSnapshots != null ? activeSnapshots[activeSnapshots.length - 1] : null;
 					
 					Thread.sleep(5000);
 					randomSuccursale.receiveMoney(
@@ -217,11 +237,13 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		return true;
 	}
 
-	private List<Transfer> _floatingMessages;
+	private Map<Integer, List<Transfer>> _floatingMessages;
 	
 	@Override
 	public void appendMessage(Transfer t) throws RemoteException {
-		_floatingMessages.add(t);
+		_floatingMessages
+			.get(t.getSnapshotToken())
+			.add(t);
 	}
 
 	@Override
@@ -234,7 +256,6 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		
 		if(_observers.values().contains(observerID))
 			return null; //Obsrver already has an active snapshot. Ignore this request.  
-		//_snapshotToken = snapshotToken;
 		_observers.put(snapshotToken, observerID);
 		
 		Transfer localValue = new Transfer(_montant, _uid, -1, snapshotToken);
@@ -253,15 +274,22 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	
 	private void getSnapshot()
 	{
-		//Prepare list for canal messages
-		_floatingMessages = new ArrayList<Transfer>(); 
 		int newsnapshotToken = -1;
 		do{
 			newsnapshotToken = _random.nextInt(); //Might roll an already active one.  
 		}while(_observers.containsKey(newsnapshotToken));
 		
+		//Prepare list for canal messages
+		_floatingMessages.put(newsnapshotToken, new ArrayList<Transfer>()); 
+		
+		
+
 		try {
+			System.out.println("Lancement de requête d'état: " + newsnapshotToken);
 			List<Transfer> succursaleValues = sendSnapshotRequest(newsnapshotToken, _uid);
+			System.out.println("Début de la fermeture de requête d'état: " + newsnapshotToken);
+			List<Transfer> floatingMessages = endSnapshotRequest(newsnapshotToken); //endSnapshotRequest also removes floatingMessages and returns its content.
+			System.out.println("Requête d'état terminée: " + newsnapshotToken);
 			//List succursales
 			int snapshotSum =0;
 			for(Transfer t : succursaleValues)
@@ -269,13 +297,14 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 				System.out.println("Succursale #" + t.getSenderID() + " : " + t.getMoney() + "$");
 				snapshotSum += t.getMoney();
 			}
+			
 			//List floating messages
-			for(Transfer t : _floatingMessages)
+			for(Transfer t : floatingMessages)
 			{
 				System.out.println("Canal " + t.getSenderID() + "-" + t.getReceiverID() + ": " + t.getMoney() + "$");
 				snapshotSum += t.getMoney();
 			}
-			endSnapshotRequest(newsnapshotToken);
+			
 			
 			int bankTotal = _banque.getTotal();
 			System.out.println("Somme connue par la Banque : " + bankTotal + "$");
@@ -294,7 +323,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	}
 	
 	@Override
-	public boolean endSnapshotRequest(int snapshotToken) throws RemoteException
+	public List<Transfer> endSnapshotRequest(int snapshotToken) throws RemoteException
 	{
 		try {
 			Thread.sleep(5000);
@@ -303,14 +332,16 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			e.printStackTrace();
 		}
 		if(!_observers.containsKey(snapshotToken))
-			return false; //Actual return value is irrelevant. It's just that this shouldn't be an async operation. 
+			return null;  
 		_observers.remove(snapshotToken);
 		
 		for(SuccursaleInterface succ : _succursales.values())
 		{
 			succ.endSnapshotRequest(snapshotToken);
 		}
-		return true; 
+		 
+		return _floatingMessages.remove(snapshotToken);
+		
 	}
 }
 
