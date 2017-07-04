@@ -18,6 +18,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	private int _montant;
 	private int _uid;
 	private Map<Integer, SuccursaleInterface> _succursales;
+	private Map<Integer, List<Transfer>> _floatingMessages;
 	private BanqueInterface _banque;
 	private Random _random;
 	
@@ -83,11 +84,9 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			for(int i = activeSnapshots.length - 1; i >= 0; i--) //start by the newest tokens. 
 			{
 				//Transfer has no snapshot token, meaning it was sent when the sender had no
-				//active snapshots, or the sender'S current snapshot isn't the latest one. 
+				//active snapshots, or the transfer's snapshot isn't the latest one. 
 				if(transfer.getSnapshotToken() == null || transfer.getSnapshotToken() != activeSnapshots[i])
-					_succursales.get(
-							_observers.get(activeSnapshots[i])  
-							).appendMessage(transfer);
+					appendMessage(transfer);
 				//Transfer had a snapshot, and it's this one. We caught up in time with the sender, so end the loop.   
 				else
 				{
@@ -237,10 +236,9 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		return true;
 	}
 
-	private Map<Integer, List<Transfer>> _floatingMessages;
 	
-	@Override
-	public void appendMessage(Transfer t) throws RemoteException {
+	
+	private void appendMessage(Transfer t) {
 		_floatingMessages
 			.get(t.getSnapshotToken())
 			.add(t);
@@ -253,9 +251,13 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-		
+
 		if(_observers.values().contains(observerID))
-			return null; //Obsrver already has an active snapshot. Ignore this request.  
+			return null; //Obsrver already has an active snapshot. Ignore this request.
+
+		//Prepare list for canal messages
+		_floatingMessages.put(snapshotToken, new ArrayList<Transfer>());
+		
 		_observers.put(snapshotToken, observerID);
 		
 		return new Transfer(_montant, _uid, -1, snapshotToken); 
@@ -267,10 +269,6 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		do{
 			newsnapshotToken = _random.nextInt(); //Might roll an already active one.  
 		}while(_observers.containsKey(newsnapshotToken));
-		
-		//Prepare list for canal messages
-		_floatingMessages.put(newsnapshotToken, new ArrayList<Transfer>()); 
-		
 		
 
 		try {
@@ -297,6 +295,10 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 			floatingMessages.addAll(endSnapshotRequest(newsnapshotToken));
 			
 			System.out.println("Requête d'état terminée: " + newsnapshotToken);
+			
+			//format floating messages, merge canal transfers together. 
+			floatingMessages = formatMessageList(floatingMessages);
+			
 			//List succursales
 			int snapshotSum =0;
 			for(Transfer t : succursaleValues)
@@ -352,7 +354,7 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		{
 			for(int k = i+1; k < origin.size(); k++)
 			{
-				if (origin.get(i).add(origin.get(k)))//if this is true, then the transfer should be removed from the list. 
+				if (origin.get(i).add(origin.get(k)))//if this is true, then the transfers were merged and k should be removed from the list. 
 				{
 					origin.remove(k--);
 					break; 

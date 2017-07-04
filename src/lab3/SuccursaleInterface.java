@@ -12,6 +12,6 @@ public interface SuccursaleInterface extends Remote {
     void sendSuccursalesMap(Map<Integer,SuccursaleInterface> map) throws RemoteException;
     List<Transfer> endSnapshotRequest(int snapshotToken) throws RemoteException;
     void receiveMoney(Transfer trans) throws RemoteException;
-    void appendMessage(Transfer trans) throws RemoteException;
+    //void appendMessage(Transfer trans) throws RemoteException;
     Transfer sendSnapshotRequest(int snapshotToken, int observerID) throws RemoteException;
 }
