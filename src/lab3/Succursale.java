@@ -247,9 +247,18 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 	
 	
 	private void appendMessage(Transfer t) {
-		_floatingMessages
-			.get(t.getSnapshotToken())
-			.add(t);
+		for(int i = _floatingMessages.size() - 1; i >= 0; i--)
+		{
+			Integer snapshotToken = (Integer)_floatingMessages.keySet().toArray()[i]; 
+			if(snapshotToken == t.getSnapshotToken()) //Reached the snapshot that was active on sender at the time of emmission. 
+			{
+				break;
+			}
+			
+			_floatingMessages
+				.get(snapshotToken)
+				.add(t);
+		}
 	}
 
 	@Override
