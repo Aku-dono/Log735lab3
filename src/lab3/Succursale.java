@@ -235,7 +235,8 @@ public class Succursale extends UnicastRemoteObject implements SuccursaleInterfa
 		try {
 			_montant -= money;
 			Integer[] activeSnapshots = getSnapshotList();
-			int snapshotToken = activeSnapshots != null ? activeSnapshots[activeSnapshots.length - 1] : null;
+			Integer snapshotToken = activeSnapshots != null ? activeSnapshots[activeSnapshots.length - 1] : null;
+			
 			destination.receiveMoney(new Transfer(money, _uid, destinationID, snapshotToken));
 		} catch (RemoteException e) {
 			e.printStackTrace();
